@@ -1,4 +1,6 @@
 import argparse
+import matplotlib.pyplot as plt
+
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -36,7 +38,10 @@ def main():
             results.append({"instance": itype, "latency": avg_lat, "cost": cost})
         finally:
             terminate_instance(iid)
-    # TODO: plotting
+
+    print("Benchmarking complete. Plotting results...")
+    plot_results(results)
+
 
 def launch_instance(instance_type):
     import boto3
@@ -136,6 +141,31 @@ def run_inference(host: str, runs: int = 100) -> float:
     avg_latency = sum(latencies) / len(latencies)
     print(f"Avg latency on {host}: {avg_latency:.4f}s over {runs} runs")
     return avg_latency
+
+def plot_results(results, output="results.png"):
+    """
+    Plot average latency (bar) and cost per inference (line) per instance.
+    """
+    instances = [r["instance"] for r in results]
+    latencies = [r["latency"] for r in results]
+    costs = [r["cost"] for r in results]
+
+    fig, ax1 = plt.subplots(figsize=(8, 5))
+    ax1.bar(instances, latencies, alpha=0.7)
+    ax1.set_xlabel("EC2 Instance Type")
+    ax1.set_ylabel("Avg Latency (s)", color="tab:blue")
+    ax1.tick_params(axis="y", labelcolor="tab:blue")
+
+    ax2 = ax1.twinx()
+    ax2.plot(instances, costs, color="tab:orange", marker="o")
+    ax2.set_ylabel("Cost per Inference (USD)", color="tab:orange")
+    ax2.tick_params(axis="y", labelcolor="tab:orange")
+
+    plt.title("Inference Latency & Cost by Instance Type")
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved plot to {output}")
+
 
 
 if __name__ == "__main__":
