@@ -28,7 +28,12 @@ def main():
             wait_for_instance(iid)
             host = get_instance_ip(iid)
             wait_for_service(host)
-            # TODO: call run_inference & cost_per_inference, append to results
+            # Measure latency
+            avg_lat = run_inference(host, args.runs)
+            # Compute cost
+            cost = cost_per_inference(itype, avg_lat, args.runs)
+
+            results.append({"instance": itype, "latency": avg_lat, "cost": cost})
         finally:
             terminate_instance(iid)
     # TODO: plotting
@@ -91,6 +96,47 @@ def wait_for_service(host, port=8080, timeout=300):
             pass
         time.sleep(5)
     raise RuntimeError(f"Service did not respond within {timeout}s")
+
+# On-demand hourly pricing (USD/hr). Update as needed from AWS pricing pages.
+PRICES = {
+    "t3.medium": 0.0416,
+    "g4dn.xlarge": 0.526,
+    # add more if you’ll test additional instance types
+}
+
+def cost_per_inference(instance_type: str, avg_latency_s: float, runs: int) -> float:
+    """
+    Compute cost per inference:
+      (hourly_rate USD/hour) * (total_seconds / 3600) / runs
+    """
+    rate = PRICES.get(instance_type)
+    if rate is None:
+        raise KeyError(f"No pricing info for {instance_type}")
+    total_time = avg_latency_s * runs
+    return rate * (total_time / 3600.0) / runs
+
+def run_inference(host: str, runs: int = 100) -> float:
+    """
+    Fire `runs` HTTP POSTs to the TorchServe ResNet50 endpoint,
+    return the average latency in seconds.
+    """
+    import requests, time
+    url = f"http://{host}:8080/predictions/resnet50"
+    img_path = "sample.png"
+    with open(img_path, "rb") as f:
+        data = f.read()
+
+    latencies = []
+    for i in range(runs):
+        start = time.time()
+        r = requests.post(url, files={"data": data})
+        r.raise_for_status()
+        latencies.append(time.time() - start)
+
+    avg_latency = sum(latencies) / len(latencies)
+    print(f"Avg latency on {host}: {avg_latency:.4f}s over {runs} runs")
+    return avg_latency
+
 
 if __name__ == "__main__":
     main()
